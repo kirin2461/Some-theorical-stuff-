@@ -1,0 +1,1537 @@
+# Архитектура платформы оценки цифровой инфраструктуры России
+
+## Содержание
+1. [Общая архитектура](#общая-архитектура)
+2. [Компоненты системы](#компоненты-системы)
+3. [Схема данных](#схема-данных)
+4. [API спецификация](#api-спецификация)
+5. [Технологический стек](#технологический-стек)
+6. [Структура репозитория](#структура-репозитория)
+7. [План развития](#план-развития)
+
+---
+
+## Общая архитектура
+
+### High-Level Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              КЛИЕНТСКИЙ СЛОЙ                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   Web App   │  │  Mobile App │  │   Admin     │  │  Engineer Portal    │ │
+│  │  (React)    │  │  (PWA)      │  │   Panel     │  │  (Vue/React)        │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+└─────────┼────────────────┼────────────────┼────────────────────┼────────────┘
+          │                │                │                    │
+          └────────────────┴────────────────┴────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              API GATEWAY (Kong/Nginx)                       │
+│  - Rate Limiting │ Auth │ Routing │ Load Balancing │ Caching               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+          ▼                        ▼                        ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   PUBLIC API    │    │  PROTECTED API  │    │  INTERNAL API   │
+│   (Read-only)   │    │  (User data)    │    │  (Services)     │
+└────────┬────────┘    └────────┬────────┘    └────────┬────────┘
+         │                      │                      │
+         ▼                      ▼                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           МИКРОСЕРВИСЫ                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │   Coverage   │  │   Tariff     │  │    Fiber     │  │    WiFi      │    │
+│  │   Service    │  │   Service    │  │   Service    │  │   Service    │    │
+│  │   (Go)       │  │   (Python)   │  │   (Go)       │  │   (Python)   │    │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘    │
+│         │                 │                 │                 │            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │    Auth      │  │    User      │  │   Parser     │  │ Notification │    │
+│  │   Service    │  │   Service    │  │   Service    │  │   Service    │    │
+│  │   (Go)       │  │   (Go)       │  │   (Python)   │  │   (Go)       │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         СЛОЙ ДАННЫХ                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │
+│  │ PostgreSQL  │  │    Redis    │  │  ClickHouse │  │   Elasticsearch │    │
+│  │  + PostGIS  │  │   (Cache)   │  │  (Analytics)│  │     (Search)    │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────┘    │
+│                                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │
+│  │   MinIO     │  │   Kafka     │  │  Prometheus │  │   Grafana       │    │
+│  │  (Files)    │  │  (Events)   │  │  (Metrics)  │  │   (Dashboards)  │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────┘    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      ИНФРАСТРУКТУРА КАРТ                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
+│  │ OpenMapTiles│  │TileServer GL│  │ MapLibre GL │                          │
+│  │  (Vector)   │  │  (Server)   │  │  (Client)   │                          │
+│  └─────────────┘  └─────────────┘  └─────────────┘                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Компоненты системы
+
+### 1. Coverage Service (Go)
+
+**Ответственность:**
+- Хранение и запрос покрытия мобильной связи
+- Геопространственные запросы (точка, полигон, тайлы)
+- Агрегация статистики скоростей
+- Интеграция с внешними источниками данных (MNC/MCC)
+
+**Ключевые таблицы:**
+- `operators` - операторы связи
+- `coverage_tiles` - тайлы покрытия
+- `coverage_polygons` - полигоны покрытия
+- `speed_stats` - статистика скоростей
+
+**API Endpoints:**
+- `GET /api/v1/coverage/point` - покрытие в точке
+- `GET /api/v1/coverage/building/:id` - покрытие здания
+- `GET /api/v1/coverage/tiles` - тайлы для карты
+- `GET /api/v1/coverage/operators` - список операторов
+
+---
+
+### 2. Tariff Service (Python/FastAPI)
+
+**Ответственность:**
+- Хранение тарифных планов
+- Алгоритмы рекомендаций
+- Парсинг тарифов с сайтов операторов
+- matching покрытия + профиля использования + тарифов
+
+**Ключевые таблицы:**
+- `tariff_plans` - тарифные планы
+- `tariff_sources` - источники тарифов
+- `user_usage_profiles` - профили использования
+
+**API Endpoints:**
+- `GET /api/v1/tariffs` - список тарифов
+- `GET /api/v1/tariffs/:id` - детали тарифа
+- `POST /api/v1/tariffs/recommendations` - рекомендации
+- `GET /api/v1/tariffs/by-location` - тарифы по локации
+
+**Алгоритм рекомендаций:**
+```python
+def calculate_tariff_score(tariff, profile, coverage):
+    score = 0
+    
+    # 1. Покрытие (30%)
+    if coverage.quality_score > 0.7:
+        score += 30
+    elif coverage.quality_score > 0.4:
+        score += 15
+    
+    # 2. Соответствие данных (25%)
+    data_ratio = min(tariff.data_gb / profile.estimated_data_gb, 2.0)
+    score += 25 * (data_ratio if data_ratio >= 1 else data_ratio * 0.5)
+    
+    # 3. Соответствие минут (20%)
+    minutes_ratio = min(tariff.minutes / profile.minutes, 2.0)
+    score += 20 * (minutes_ratio if minutes_ratio >= 1 else minutes_ratio * 0.5)
+    
+    # 4. Ценовая эффективность (15%)
+    market_avg = get_market_average(tariff.type)
+    score += 15 * (market_avg / tariff.price_month if tariff.price_month > 0 else 0)
+    
+    # 5. FUP и ограничения (10%)
+    if not tariff.fair_use_policy or tariff.fair_use_policy == 'none':
+        score += 10
+    
+    return score
+```
+
+---
+
+### 3. Fiber Service (Go)
+
+**Ответственность:**
+- Хранение инфраструктуры ВОЛС
+- Расчёт link budget
+- Планирование трасс
+- Проверка доступности FTTH
+
+**Ключевые таблицы:**
+- `fiber_nodes` - узлы сети (POP, OLT, Distribution)
+- `fiber_segments` - сегменты кабеля
+- `building_fiber_status` - статус подключения зданий
+
+**API Endpoints:**
+- `GET /api/v1/fiber/availability` - доступность FTTH
+- `POST /api/v1/fiber/plan` - планирование трассы
+- `GET /api/v1/fiber/nodes` - узлы в районе
+- `GET /api/v1/fiber/buildings/:id/status` - статус здания
+
+**Link Budget Calculation:**
+```go
+type LinkBudget struct {
+    FiberLengthKm        float64
+    AttenuationDbPerKm   float64
+    SpliceCount          int
+    SpliceLossDb         float64
+    ConnectorCount       int
+    ConnectorLossDb      float64
+    SafetyMarginDb       float64
+}
+
+func (lb *LinkBudget) Calculate() float64 {
+    fiberLoss := lb.FiberLengthKm * lb.AttenuationDbPerKm
+    spliceLoss := float64(lb.SpliceCount) * lb.SpliceLossDb
+    connectorLoss := float64(lb.ConnectorCount) * lb.ConnectorLossDb
+    
+    return fiberLoss + spliceLoss + connectorLoss + lb.SafetyMarginDb
+}
+
+func IsLinkViable(budget LinkBudget, txPowerDbm, rxSensitivityDbm float64) bool {
+    totalLoss := budget.Calculate()
+    availablePower := txPowerDbm - rxSensitivityDbm
+    return totalLoss <= availablePower
+}
+```
+
+---
+
+### 4. WiFi Service (Python/FastAPI)
+
+**Ответственность:**
+- Управление проектами WiFi
+- Расчёт heatmap (теоретический и по замерам)
+- Рекомендации по размещению AP
+- Хранение планов помещений
+
+**Ключевые таблицы:**
+- `projects` - проекты пользователей
+- `floorplans` - планы помещений
+- `walls` - стены (материалы, затухание)
+- `access_points` - точки доступа
+- `measurement_points` - точки замеров
+
+**API Endpoints:**
+- `CRUD /api/v1/projects` - проекты
+- `CRUD /api/v1/projects/:id/floorplans` - планы
+- `POST /api/v1/projects/:id/heatmap` - расчёт heatmap
+- `POST /api/v1/projects/:id/ap-recommendations` - рекомендации AP
+
+**Indoor Path Loss Model:**
+```python
+import numpy as np
+from scipy.interpolate import Rbf
+
+class HeatmapCalculator:
+    def __init__(self, floorplan, walls, access_points):
+        self.floorplan = floorplan
+        self.walls = walls
+        self.access_points = access_points
+    
+    def calculate_theoretical(self, resolution=0.5):
+        """
+        Расчёт теоретической heatmap
+        Используем модель: PL = PL_0 + 10*n*log10(d) + sum(wall_attenuation)
+        """
+        grid = self._create_grid(resolution)
+        signal_map = np.zeros(grid.shape)
+        
+        for ap in self.access_points:
+            for i in range(grid.shape[0]):
+                for j in range(grid.shape[1]):
+                    point = grid[i, j]
+                    distance = np.linalg.norm(point - ap.position)
+                    
+                    # Базовое затухание (FSPL at 1m + path loss exponent)
+                    pl_0 = 40.05  # at 2.4GHz, 1m
+                    n = 2.5  # path loss exponent for indoor
+                    path_loss = pl_0 + 10 * n * np.log10(distance + 0.1)
+                    
+                    # Дополнительное затухание от стен
+                    wall_loss = self._calculate_wall_loss(ap.position, point)
+                    
+                    # RSSI
+                    rssi = ap.power_dbm + ap.antenna_gain - path_loss - wall_loss
+                    signal_map[i, j] = max(signal_map[i, j], rssi)
+        
+        return grid, signal_map
+    
+    def calculate_measured(self, measurement_points):
+        """
+        Интерполяция по реальным замерам (IDW - Inverse Distance Weighting)
+        """
+        if len(measurement_points) < 3:
+            return self.calculate_theoretical()
+        
+        grid = self._create_grid(0.5)
+        
+        # RBF интерполяция
+        x = [mp.position[0] for mp in measurement_points]
+        y = [mp.position[1] for mp in measurement_points]
+        z = [mp.rssi_dbm for mp in measurement_points]
+        
+        rbf = Rbf(x, y, z, function='multiquadric')
+        
+        X, Y = np.meshgrid(
+            np.arange(grid.bounds[0], grid.bounds[2], 0.5),
+            np.arange(grid.bounds[1], grid.bounds[3], 0.5)
+        )
+        
+        Z = rbf(X, Y)
+        
+        return (X, Y), Z
+    
+    def _calculate_wall_loss(self, p1, p2):
+        """Расчёт потерь от пересечения стен"""
+        total_loss = 0
+        line = LineString([p1, p2])
+        
+        for wall in self.walls:
+            if line.intersects(wall.geometry):
+                # Затухание зависит от материала
+                material_loss = {
+                    'drywall': 3,
+                    'concrete': 10,
+                    'brick': 8,
+                    'glass': 2,
+                    'metal': 20
+                }
+                total_loss += material_loss.get(wall.material_type, 5)
+        
+        return total_loss
+```
+
+**Эвристики для рекомендаций AP:**
+```python
+def recommend_ap_placement(floorplan, walls, desired_coverage=-65):
+    """
+    Рекомендации по размещению точек доступа
+    
+    Эвристики:
+    1. Равномерное покрытие (grid-based placement)
+    2. Учёт центра масс помещения
+    3. Избегание размещения у стен с высоким затуханием
+    4. Минимальное перекрытие зон покрытия (~15-20%)
+    5. Учёт типичного радиуса покрытия (15-20м для 2.4GHz)
+    """
+    recommendations = []
+    
+    # Размер ячейки покрытия (радиус ~15м)
+    cell_size = 25  # meters
+    
+    # Разбиваем помещение на ячейки
+    bounds = floorplan.bounds
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    
+    cols = int(width / cell_size) + 1
+    rows = int(height / cell_size) + 1
+    
+    for row in range(rows):
+        for col in range(cols):
+            x = bounds[0] + col * cell_size + cell_size / 2
+            y = bounds[1] + row * cell_size + cell_size / 2
+            
+            point = Point(x, y)
+            
+            # Проверяем, что точка внутри помещения
+            if floorplan.contains(point):
+                # Проверяем близость к стенам с высоким затуханием
+                wall_penalty = calculate_wall_proximity_penalty(point, walls)
+                
+                # Корректируем позицию от стен
+                adjusted_point = adjust_position_from_walls(point, walls, min_distance=2)
+                
+                recommendations.append({
+                    'position': (adjusted_point.x, adjusted_point.y),
+                    'confidence': 1.0 - wall_penalty,
+                    'estimated_coverage_radius': 15 * (1 - wall_penalty * 0.3)
+                })
+    
+    # Фильтруем перекрывающиеся рекомендации
+    recommendations = filter_overlapping(recommendations, overlap_threshold=0.8)
+    
+    return recommendations
+```
+
+---
+
+### 5. Auth Service (Go)
+
+**Ответственность:**
+- Аутентификация (JWT)
+- Авторизация (RBAC)
+- Управление сессиями
+- Интеграция с SMS/email провайдерами РФ
+
+**Роли:**
+- `guest` - неавторизованный пользователь (только чтение публичной карты)
+- `user` - обычный пользователь (ЛК, проекты WiFi)
+- `engineer` - инженер/партнёр (доступ к fiber planning)
+- `admin` - администратор
+
+---
+
+### 6. Parser Service (Python)
+
+**Ответственность:**
+- Парсинг тарифов с сайтов операторов
+- Обновление по расписанию (cron)
+- Обработка изменений
+- Версионирование тарифов
+
+**Поддерживаемые операторы (начальный список):**
+- МТС
+- МегаФон
+- Билайн
+- Tele2
+- Ростелеком
+- Дом.ру
+- ТТК
+- Эр-Телеком
+
+---
+
+### 7. Map Infrastructure
+
+**Self-hosted стек:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    MapLibre GL JS                       │
+│              (Клиентская библиотека)                    │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   TileServer GL                         │
+│         (Сервер векторных/растровых тайлов)             │
+│                                                         │
+│  - Рендеринг тайлов из MBTiles                        │
+│  - Поддержка GL styles                                  │
+│  - Кэширование                                          │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   MBTiles Files                         │
+│                                                         │
+│  - openmaptiles_russia.mbtiles (OSM base)              │
+│  - coverage_tiles.mbtiles (покрытие)                   │
+│  - fiber_network.mbtiles (оптика)                      │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                OpenMapTiles Generator                   │
+│         (Генерация векторных тайлов)                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Альтернатива для РФ (если нужны детальные карты):**
+- Использование данных OpenStreetMap России
+- Собственный tile-server на базе `tegola` или `tileserver-gl`
+- Хостинг на серверах в РФ (Selectel, Yandex Cloud, etc.)
+
+---
+
+## Схема данных
+
+### ER Diagram
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│    operators    │     │  coverage_tiles  │     │ coverage_polygons│
+├─────────────────┤     ├──────────────────┤     ├─────────────────┤
+│ id (PK)         │◄────┤ operator_id (FK) │     │ id (PK)         │
+│ name            │     │ id (PK)          │     │ operator_id(FK) │
+│ type            │     │ tech             │     │ tech            │
+│ mcc             │     │ geometry         │     │ geometry        │
+│ mnc             │     │ signal_level     │     │ quality_score   │
+│ technologies[]  │     │ quality_score    │     │ source          │
+└─────────────────┘     │ source           │     └─────────────────┘
+                        │ updated_at       │
+                        └──────────────────┘
+                                   │
+                                   │
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  speed_stats    │     │    buildings     │     │building_fiber_  │
+├─────────────────┤     ├──────────────────┤     │    status       │
+│ id (PK)         │     │ id (PK)          │◄────┤ building_id(FK) │
+│ location        │◄────┤ address          │     │ operator_id(FK) │
+│ operator_id(FK) │     │ geometry         │     │ has_ftth        │
+│ tech            │     │ has_ftth         │     │ connection_point│
+│ dl_speed        │     │ has_xdsl         │     └─────────────────┘
+│ ul_speed        │     │ providers[]      │
+│ latency         │     └──────────────────┘
+│ source          │
+└─────────────────┘
+
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  tariff_plans   │     │  tariff_sources  │     │user_usage_      │
+├─────────────────┤     ├──────────────────┤     │   profiles      │
+│ id (PK)         │◄────┤ tariff_id (FK)   │     ├─────────────────┤
+│ operator_id(FK) │     │ id (PK)          │     │ id (PK)         │
+│ type            │     │ source_url       │     │ user_id (FK)    │
+│ name            │     │ last_checked_at  │     │ estimated_data  │
+│ description     │     │ last_status      │     │ minutes         │
+│ price_month     │     └──────────────────┘     │ main_apps[]     │
+│ speed           │                              │ devices_count   │
+│ data_gb         │                              │ work_from_home  │
+│ minutes         │                              └─────────────────┘
+│ sms             │
+│ fup             │
+│ contract_term   │
+└─────────────────┘
+
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  fiber_nodes    │     │  fiber_segments  │     │     users       │
+├─────────────────┤     ├──────────────────┤     ├─────────────────┤
+│ id (PK)         │◄────┤ from_node (FK)   │     │ id (PK)         │
+│ operator_id(FK) │◄────┤ to_node (FK)     │     │ email           │
+│ type            │     │ id (PK)          │     │ phone           │
+│ geometry        │     │ type             │     │ password_hash   │
+└─────────────────┘     │ length_m         │     │ role            │
+                        │ attenuation      │     │ created_at      │
+                        └──────────────────┘     └─────────────────┘
+
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│    projects     │     │    floorplans    │     │     walls       │
+├─────────────────┤     ├──────────────────┤     ├─────────────────┤
+│ id (PK)         │◄────┤ project_id (FK)  │     │ id (PK)         │
+│ user_id (FK)    │     │ id (PK)          │◄────┤ floorplan_id(FK)│
+│ name            │     │ source_type      │     │ geometry        │
+│ location        │     │ image_url        │     │ material_type   │
+│ building_id     │     │ geometry_vector  │     │ attenuation_db  │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+
+┌─────────────────┐     ┌──────────────────┐
+│  access_points  │     │measurement_points│
+├─────────────────┤     ├──────────────────┤
+│ id (PK)         │     │ id (PK)          │
+│ project_id (FK) │     │ project_id (FK)  │
+│ position_xy     │     │ position_xy      │
+│ freq_band       │     │ rssi_dbm         │
+│ power_dbm       │     │ timestamp        │
+│ antenna_gain    │     │ device_type      │
+│ model           │     └──────────────────┘
+└─────────────────┘
+```
+
+---
+
+## API спецификация
+
+### Coverage API
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Coverage API
+  version: 1.0.0
+
+paths:
+  /api/v1/coverage/point:
+    get:
+      summary: Получить покрытие в точке
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: radius
+          in: query
+          schema:
+            type: number
+            default: 100
+      responses:
+        200:
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  location:
+                    type: object
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+                  operators:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        operator_id: { type: string }
+                        operator_name: { type: string }
+                        technologies:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              tech: { type: string, enum: [2G, 3G, 4G, 5G] }
+                              signal_level: { type: string, enum: [excellent, good, fair, poor, none] }
+                              signal_dbm: { type: number }
+                              quality_score: { type: number, minimum: 0, maximum: 1 }
+                              expected_speed:
+                                type: object
+                                properties:
+                                  download_mbps: { type: number }
+                                  upload_mbps: { type: number }
+                                  latency_ms: { type: number }
+
+  /api/v1/coverage/building/{building_id}:
+    get:
+      summary: Покрытие для здания
+      parameters:
+        - name: building_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  building:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      address: { type: string }
+                      geometry: { type: object }
+                  coverage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        operator_id: { type: string }
+                        operator_name: { type: string }
+                        technologies: { type: array, items: { type: string } }
+                        average_signal: { type: string }
+
+  /api/v1/coverage/tiles:
+    get:
+      summary: Получить тайлы покрытия
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "37.6173,55.7558,37.6273,55.7658"
+        - name: layer
+          in: query
+          schema:
+            type: string
+            enum: [mobile, fixed, quality, operators]
+            default: mobile
+        - name: zoom
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 18
+      responses:
+        200:
+          description: GeoJSON FeatureCollection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, enum: [FeatureCollection] }
+                  features:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: { type: string, enum: [Feature] }
+                        geometry: { type: object }
+                        properties:
+                          type: object
+                          properties:
+                            operator_id: { type: string }
+                            tech: { type: string }
+                            quality_score: { type: number }
+```
+
+### Tariff API
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Tariff API
+  version: 1.0.0
+
+paths:
+  /api/v1/tariffs:
+    get:
+      summary: Список тарифов
+      parameters:
+        - name: operator_id
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [mobile, fixed, bundle]
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        200:
+          description: Список тарифов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TariffPlan'
+
+  /api/v1/tariffs/recommendations:
+    post:
+      summary: Получить рекомендации по тарифам
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                location:
+                  type: object
+                  properties:
+                    lat: { type: number }
+                    lon: { type: number }
+                    address: { type: string }
+                usage_profile:
+                  type: object
+                  properties:
+                    estimated_data_gb: { type: number }
+                    minutes: { type: integer }
+                    main_apps: { type: array, items: { type: string } }
+                    devices_count: { type: integer }
+                    work_from_home: { type: boolean }
+                    priority:
+                      type: string
+                      enum: [price, speed, unlimited, reliability]
+                      default: price
+                filters:
+                  type: object
+                  properties:
+                    max_price: { type: number }
+                    contract_term: { type: string }
+                    require_unlimited: { type: boolean }
+      responses:
+        200:
+          description: Рекомендации
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  location_coverage:
+                    type: object
+                    properties:
+                      available_operators: { type: array }
+                      best_coverage: { type: string }
+                  recommendations:
+                    type: object
+                    properties:
+                      mobile:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            tariff: { $ref: '#/components/schemas/TariffPlan' }
+                            score: { type: number }
+                            reasoning:
+                              type: array
+                              items: { type: string }
+                      fixed:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            tariff: { $ref: '#/components/schemas/TariffPlan' }
+                            score: { type: number }
+                            reasoning:
+                              type: array
+                              items: { type: string }
+                      bundle:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            tariff: { $ref: '#/components/schemas/TariffPlan' }
+                            score: { type: number }
+                            reasoning:
+                              type: array
+                              items: { type: string }
+
+components:
+  schemas:
+    TariffPlan:
+      type: object
+      properties:
+        id: { type: string }
+        operator_id: { type: string }
+        operator_name: { type: string }
+        type: { type: string, enum: [mobile, fixed, bundle] }
+        name: { type: string }
+        description: { type: string }
+        price_month: { type: number }
+        speed:
+          type: object
+          properties:
+            download_mbps: { type: number }
+            upload_mbps: { type: number }
+        data_gb: { type: number }
+        minutes: { type: integer }
+        sms: { type: integer }
+        fair_use_policy: { type: string }
+        contract_term: { type: string }
+        extras: { type: array, items: { type: string } }
+        available_in_regions: { type: array, items: { type: string } }
+        last_updated: { type: string, format: date-time }
+```
+
+### Fiber API
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Fiber API
+  version: 1.0.0
+
+paths:
+  /api/v1/fiber/availability:
+    get:
+      summary: Проверить доступность FTTH
+      parameters:
+        - name: building_id
+          in: query
+          schema: { type: string }
+        - name: lat
+          in: query
+          schema: { type: number }
+        - name: lon
+          in: query
+          schema: { type: number }
+      responses:
+        200:
+          description: Информация о доступности
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  building_id: { type: string }
+                  address: { type: string }
+                  availability:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        operator_id: { type: string }
+                        operator_name: { type: string }
+                        has_ftth: { type: boolean }
+                        has_xdsl: { type: boolean }
+                        estimated_connection_cost: { type: number }
+                        estimated_installation_days: { type: integer }
+                        connection_point:
+                          type: object
+                          properties:
+                            node_id: { type: string }
+                            distance_m: { type: number }
+
+  /api/v1/fiber/plan:
+    post:
+      summary: Планирование оптической трассы
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                building_id: { type: string }
+                operator_id: { type: string }
+                target_node_id: { type: string }
+                requirements:
+                  type: object
+                  properties:
+                    required_bandwidth_mbps: { type: number }
+                    max_attenuation_db: { type: number }
+                    redundancy_required: { type: boolean }
+      responses:
+        200:
+          description: План трассы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        segment_id: { type: string }
+                        from_node: { type: string }
+                        to_node: { type: string }
+                        type: { type: string, enum: [aerial, underground, indoor] }
+                        length_m: { type: number }
+                        attenuation_db_per_km: { type: number }
+                  total_length_m: { type: number }
+                  link_budget:
+                    type: object
+                    properties:
+                      fiber_loss_db: { type: number }
+                      splice_loss_db: { type: number }
+                      connector_loss_db: { type: number }
+                      safety_margin_db: { type: number }
+                      total_attenuation_db: { type: number }
+                      tx_power_dbm: { type: number }
+                      rx_sensitivity_dbm: { type: number }
+                      power_budget_db: { type: number }
+                      is_viable: { type: boolean }
+                      margin_db: { type: number }
+                  recommendations:
+                    type: array
+                    items: { type: string }
+                  alternatives:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        route_type: { type: string }
+                        description: { type: string }
+                        estimated_cost: { type: number }
+```
+
+### WiFi API
+
+```yaml
+openapi: 3.0.0
+info:
+  title: WiFi API
+  version: 1.0.0
+
+paths:
+  /api/v1/projects:
+    get:
+      summary: Список проектов пользователя
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Список проектов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+
+    post:
+      summary: Создать проект
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                location: { type: object }
+                building_id: { type: string }
+      responses:
+        201:
+          description: Проект создан
+
+  /api/v1/projects/{project_id}/heatmap:
+    post:
+      summary: Рассчитать heatmap
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [theoretical, measured]
+            default: theoretical
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                floorplan_id: { type: string }
+                resolution: { type: number, default: 0.5 }
+      responses:
+        200:
+          description: Heatmap данные
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  grid:
+                    type: object
+                    properties:
+                      bounds: { type: array, items: { type: number } }
+                      resolution: { type: number }
+                      width: { type: integer }
+                      height: { type: integer }
+                  signal_data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        x: { type: number }
+                        y: { type: number }
+                        rssi_dbm: { type: number }
+                        quality: { type: string, enum: [excellent, good, fair, poor] }
+                  access_points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        position: { type: array, items: { type: number } }
+                        coverage_radius: { type: number }
+                  statistics:
+                    type: object
+                    properties:
+                      coverage_percent: { type: number }
+                      average_rssi: { type: number }
+                      dead_zones_count: { type: integer }
+
+  /api/v1/projects/{project_id}/ap-recommendations:
+    post:
+      summary: Получить рекомендации по размещению AP
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                floorplan_id: { type: string }
+                desired_coverage_dbm: { type: number, default: -65 }
+                max_ap_count: { type: integer }
+      responses:
+        200:
+          description: Рекомендации
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        position: { type: array, items: { type: number } }
+                        confidence: { type: number }
+                        estimated_coverage_radius: { type: number }
+                        reasoning: { type: array, items: { type: string } }
+                  estimated_coverage:
+                    type: object
+                    properties:
+                      percentage: { type: number }
+                      average_signal: { type: number }
+                  suggested_ap_models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        model: { type: string }
+                        reason: { type: string }
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        location:
+          type: object
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+        building_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        floorplans:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              source_type: { type: string, enum: [uploaded, manual] }
+              image_url: { type: string }
+```
+
+---
+
+## Технологический стек
+
+### Backend
+
+| Компонент | Технология | Обоснование |
+|-----------|-----------|-------------|
+| API Gateway | Kong / Nginx | Rate limiting, auth, routing |
+| Coverage Service | Go + Echo/Fiber | Высокая производительность для гео-запросов |
+| Tariff Service | Python + FastAPI | Быстрая разработка, ML-интеграция |
+| Fiber Service | Go + Echo | Производительность, сложные вычисления |
+| WiFi Service | Python + FastAPI | Научные вычисления, numpy/scipy |
+| Auth Service | Go + Echo | Надёжность, JWT |
+| Parser Service | Python + Scrapy/Celery | Парсинг, фоновые задачи |
+
+### Database & Storage
+
+| Компонент | Технология | Назначение |
+|-----------|-----------|------------|
+| Primary DB | PostgreSQL 15 + PostGIS | Геоданные, основные сущности |
+| Cache | Redis 7 | Сессии, кэш тайлов, rate limiting |
+| Analytics | ClickHouse | Статистика скоростей, логи |
+| Search | Elasticsearch | Поиск адресов, тарифов |
+| Files | MinIO | Планы помещений, изображения |
+| Message Queue | Apache Kafka | События между сервисами |
+
+### Frontend
+
+| Компонент | Технология |
+|-----------|-----------|
+| Web App | React 18 + TypeScript |
+| State Management | Zustand / Redux Toolkit |
+| Maps | MapLibre GL JS |
+| UI Components | shadcn/ui + Tailwind CSS |
+| Charts | Recharts / D3 |
+| Build | Vite |
+
+### Infrastructure
+
+| Компонент | Технология |
+|-----------|-----------|
+| Container Orchestration | Kubernetes |
+| Service Mesh | Istio (опционально) |
+| Monitoring | Prometheus + Grafana |
+| Logging | Loki + Grafana |
+| Tracing | Jaeger |
+| CI/CD | GitLab CI / GitHub Actions |
+| Secrets | HashiCorp Vault |
+
+### Map Stack (Self-hosted)
+
+| Компонент | Технология |
+|-----------|-----------|
+| Vector Tiles | OpenMapTiles |
+| Tile Server | TileServer GL |
+| Client Library | MapLibre GL JS |
+| Data Source | OpenStreetMap (Россия) |
+
+---
+
+## Структура репозитория
+
+```
+infra-map-platform/
+├── README.md
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── Makefile
+├── .env.example
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── API.md
+│   ├── DEPLOYMENT.md
+│   └── DEVELOPMENT.md
+├── infrastructure/
+│   ├── kubernetes/
+│   │   ├── namespaces/
+│   │   ├── services/
+│   │   ├── ingress/
+│   │   └── monitoring/
+│   ├── terraform/
+│   │   ├── modules/
+│   │   ├── staging/
+│   │   └── production/
+│   └── docker/
+│       ├── base/
+│       └── services/
+├── services/
+│   ├── api-gateway/
+│   │   ├── Dockerfile
+│   │   ├── nginx.conf
+│   │   └── kong.yml
+│   ├── coverage-service/
+│   │   ├── Dockerfile
+│   │   ├── go.mod
+│   │   ├── go.sum
+│   │   ├── cmd/
+│   │   │   └── server/
+│   │   │       └── main.go
+│   │   ├── internal/
+│   │   │   ├── config/
+│   │   │   ├── handlers/
+│   │   │   ├── models/
+│   │   │   ├── repository/
+│   │   │   ├── service/
+│   │   │   └── middleware/
+│   │   ├── pkg/
+│   │   │   └── geoutils/
+│   │   └── migrations/
+│   ├── tariff-service/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── requirements.txt
+│   │   ├── app/
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py
+│   │   │   ├── config.py
+│   │   │   ├── api/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── routes/
+│   │   │   │   ├── deps.py
+│   │   │   │   └── schemas/
+│   │   │   ├── core/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── recommender.py
+│   │   │   │   └── parser_engine.py
+│   │   │   ├── models/
+│   │   │   ├── services/
+│   │   │   └── tasks/
+│   │   ├── alembic/
+│   │   └── tests/
+│   ├── fiber-service/
+│   │   ├── Dockerfile
+│   │   ├── go.mod
+│   │   ├── cmd/
+│   │   ├── internal/
+│   │   └── pkg/
+│   │       └── linkbudget/
+│   ├── wifi-service/
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── app/
+│   │   │   ├── api/
+│   │   │   ├── core/
+│   │   │   │   ├── heatmap.py
+│   │   │   │   ├── pathloss.py
+│   │   │   │   └── ap_recommender.py
+│   │   │   └── models/
+│   │   └── tests/
+│   ├── auth-service/
+│   │   ├── Dockerfile
+│   │   ├── go.mod
+│   │   └── internal/
+│   └── parser-service/
+│       ├── Dockerfile
+│       ├── pyproject.toml
+│       ├── app/
+│       │   ├── parsers/
+│       │   │   ├── mts.py
+│       │   │   ├── megafon.py
+│       │   │   ├── beeline.py
+│       │   │   └── tele2.py
+│       │   └── tasks/
+│       └── tests/
+├── web/
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── vite.config.ts
+│   ├── public/
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── components/
+│       │   ├── common/
+│       │   ├── map/
+│       │   ├── coverage/
+│       │   ├── tariffs/
+│       │   ├── wifi/
+│       │   └── layout/
+│       ├── pages/
+│       │   ├── Home/
+│       │   ├── Map/
+│       │   ├── Tariffs/
+│       │   ├── WiFiPlanner/
+│       │   └── Profile/
+│       ├── hooks/
+│       ├── stores/
+│       ├── services/
+│       │   └── api/
+│       ├── types/
+│       └── utils/
+├── shared/
+│   ├── proto/
+│   │   ├── coverage.proto
+│   │   ├── tariff.proto
+│   │   └── common.proto
+│   └── openapi/
+│       ├── coverage.yaml
+│       ├── tariff.yaml
+│       ├── fiber.yaml
+│       └── wifi.yaml
+├── database/
+│   ├── migrations/
+│   │   ├── 001_initial.sql
+│   │   └── 002_add_indexes.sql
+│   ├── seeds/
+│   └── fixtures/
+└── scripts/
+    ├── init-db.sh
+    ├── import-coverage.sh
+    └── deploy.sh
+```
+
+---
+
+## План развития
+
+### Phase 1: MVP (2-3 месяца)
+
+**Цель:** Публичная карта покрытия с базовыми данными
+
+**Компоненты:**
+- [x] Coverage Service (базовый)
+- [x] PostgreSQL + PostGIS
+- [x] Self-hosted карта (OpenMapTiles + TileServer GL)
+- [x] Web-приложение (карта + поиск адресов)
+- [x] Auth Service (базовый)
+
+**Данные:**
+- Импорт покрытия операторов (открытые данные)
+- Базовая статистика скоростей
+
+**API:**
+- `GET /api/v1/coverage/point`
+- `GET /api/v1/coverage/tiles`
+- `GET /api/v1/operators`
+
+---
+
+### Phase 2: Тарифы и рекомендации (1-2 месяца)
+
+**Цель:** Подбор тарифов по локации
+
+**Компоненты:**
+- [x] Tariff Service
+- [x] Parser Service (3-4 крупных оператора)
+- [x] Модуль рекомендаций (rule-based)
+
+**API:**
+- `GET /api/v1/tariffs`
+- `POST /api/v1/tariffs/recommendations`
+
+**UI:**
+- Страница тарифов
+- Форма профиля использования
+
+---
+
+### Phase 3: Оптика (2 месяца)
+
+**Цель:** Информация о доступности FTTH и планирование трасс
+
+**Компоненты:**
+- [x] Fiber Service
+- [x] Хранение инфраструктуры ВОЛС
+- [x] Link budget calculator
+
+**API:**
+- `GET /api/v1/fiber/availability`
+- `POST /api/v1/fiber/plan` (для инженеров)
+
+**UI:**
+- Слой оптики на карте
+- Форма проверки доступности
+
+---
+
+### Phase 4: WiFi Planner (2-3 месяца)
+
+**Цель:** Планирование WiFi в помещениях
+
+**Компоненты:**
+- [x] WiFi Service
+- [x] Heatmap calculator
+- [x] AP recommender
+
+**API:**
+- CRUD для проектов
+- `POST /api/v1/projects/:id/heatmap`
+- `POST /api/v1/projects/:id/ap-recommendations`
+
+**UI:**
+- Редактор планов помещений
+- Визуализация heatmap
+
+---
+
+### Phase 5: ML/AI интеграция (постоянно)
+
+**Области применения:**
+
+1. **Улучшенный path-loss модель**
+   - Данные: реальные замеры + планы помещений
+   - Модель: Random Forest / XGBoost для предсказания затухания
+   - Результат: точность heatmap ±3 dBm
+
+2. **Предсказание покрытия**
+   - Данные: существующие вышки + топография
+   - Модель: ML для предсказания зон покрытия
+   - Результат: планирование новых вышек
+
+3. **Умные тарифные рекомендации**
+   - Данные: история выбора пользователей + отзывы
+   - Модель: Collaborative filtering + Content-based
+   - Результат: персонализированные рекомендации
+
+4. **Оптимизация размещения AP**
+   - Данные: эффективные конфигурации
+   - Модель: Reinforcement Learning / Genetic Algorithm
+   - Результат: оптимальное покрытие минимальным числом AP
+
+5. **Предиктивная аналитика**
+   - Прогнозирование загрузки сети
+   - Выявление проблемных зон
+   - Рекомендации по расширению инфраструктуры
+
+---
+
+## Безопасность и соответствие
+
+### Требования РФ
+
+1. **Хранение данных:**
+   - Все персональные данные в РФ
+   - Шифрование at rest и in transit
+
+2. **Логирование:**
+   - Хранение логов доступа (1 год)
+   - Неизменяемые логи для критичных операций
+
+3. **Аутентификация:**
+   - Поддержка Госуслуг (ESIA) - опционально
+   - SMS-аутентификация через российских провайдеров
+
+4. **Защита:**
+   - WAF (ModSecurity / Coraza)
+   - DDoS protection
+   - Regular security audits
+
+---
+
+## Масштабирование
+
+### Горизонтальное масштабирование
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Load Balancer                        │
+└─────────────────────────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Coverage    │   │  Coverage    │   │  Coverage    │
+│  Service 1   │   │  Service 2   │   │  Service N   │
+└──────────────┘   └──────────────┘   └──────────────┘
+        │                  │                  │
+        └──────────────────┼──────────────────┘
+                           │
+                    ┌──────────────┐
+                    │   PostgreSQL │
+                    │   Primary    │
+                    └───────┬──────┘
+                            │
+                    ┌───────┴──────┐
+                    │   PostgreSQL │
+                    │   Replica    │
+                    └──────────────┘
+```
+
+### Кэширование тайлов
+
+- CDN для статических тайлов
+- Redis для динамических данных
+- Edge caching (если CDN в РФ)
+
+### Шардирование
+
+- По географическим регионам (федеральные округа)
+- По операторам (для coverage data)
+
+---
+
+## Заключение
+
+Данная архитектура обеспечивает:
+
+1. **Самодостаточность** - только open-source и self-hosted компоненты
+2. **Масштабируемость** - микросервисная архитектура
+3. **Надёжность** - отказоустойчивость на всех уровнях
+4. **Безопасность** - соответствие требованиям РФ
+5. **Гибкость** - постепенное наращивание функциональности
+
+Следующий шаг - создание SQL миграций и каркаса кода.
