@@ -1,0 +1,200 @@
+# 10-Phase Cognitive Cycle
+
+> A sequence of stages through which an intelligent system perceives information, keeps it in working memory, selects actions, generates a response, and learns from the outcome.
+
+```text
+Input Data
+      │
+      ▼
+┌──────────────────────────────────────────────┐
+│ 1. Perception                                │
+│    Parse and interpret incoming information  │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 2. Working Memory Update                     │
+│    Add newly perceived information           │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 3. Attention                                 │
+│    Select the primary focus                  │
+│    based on activation level                 │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 4. Memory Retrieval                          │
+│    Search for and retrieve relevant memories │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 5. Action Selection                          │
+│    Run the rule engine and choose a response │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 6. Action Execution                          │
+│    Generate and deliver the response         │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 7. Learning                                  │
+│    Store the episode, outcome, and context   │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 8. Emotion Update                            │
+│    Gradually reduce emotional intensity      │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 9. Goal Check                                │
+│    Evaluate progress and determine whether   │
+│    further actions need adjustment           │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 10. Cleanup                                  │
+│     Apply decay to irrelevant data, emotions,│
+│     and temporary activations                │
+└──────────────────────┬───────────────────────┘
+                       ▼
+                Next Cycle
+```
+
+## Summary Table
+
+| No. | Stage | Description |
+|---:|---|---|
+| 1 | Perception | Parses incoming text, signals, commands, or events |
+| 2 | Working Memory Update | Adds new facts and observations to the current context |
+| 3 | Attention | Determines what the system should focus on first |
+| 4 | Memory Retrieval | Finds relevant prior knowledge, experiences, and similar situations |
+| 5 | Action Selection | Applies rules, conditions, and priorities to choose a response |
+| 6 | Action Execution | Generates a response, command, decision, or other action |
+| 7 | Learning | Stores the interaction outcome as a new experience |
+| 8 | Emotion Update | Reduces the intensity of previous emotional states when no new events sustain them |
+| 9 | Goal Check | Compares the current result with the intended goal |
+| 10 | Cleanup | Reduces the importance of temporary, outdated, and irrelevant information |
+
+## Simplified Example
+
+A user writes to the system:
+
+> “Help me prepare for my physics test.”
+
+The cycle may work like this:
+
+1. **Perception:** The system understands the user’s request.
+2. **Working Memory Update:** It stores the subject—physics—and the goal—preparing for a test.
+3. **Attention:** It identifies the main task: determine the test topic and the student’s current level.
+4. **Memory Retrieval:** It retrieves relevant knowledge about common school physics topics.
+5. **Action Selection:** It decides whether to ask a clarifying question or immediately propose a study plan.
+6. **Action Execution:** It generates a response.
+7. **Learning:** It stores which topics the student finds difficult.
+8. **Emotion Update:** It reduces urgency or anxiety if the situation has become clearer or is being addressed.
+9. **Goal Check:** It evaluates whether the student has moved closer to being prepared.
+10. **Cleanup:** It removes unnecessary temporary details from the active focus.
+
+This cycle can serve as a foundation for an AI agent, chatbot, game NPC, digital assistant, or a model of cognitive behavior.
+
+
+# 10-фазовый когнитивный цикл
+
+> Последовательность этапов, по которым интеллектуальная система воспринимает информацию, удерживает её в рабочей памяти, выбирает действия, формирует ответ и обучается на результате.
+
+```text
+Входные данные
+      │
+      ▼
+┌──────────────────────────────────────────────┐
+│ 1. Восприятие                                │
+│    Разбор и интерпретация входной информации │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 2. Обновление рабочей памяти                 │
+│    Добавление новых воспринятых данных       │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 3. Внимание                                  │
+│    Выбор главного объекта фокуса             │
+│    на основе уровня активации                │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 4. Извлечение из памяти                      │
+│    Поиск и получение релевантных воспоминаний│
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 5. Выбор действия                            │
+│    Запуск движка правил и выбор реакции      │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 6. Выполнение действия                       │
+│    Формирование и отправка ответа            │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 7. Обучение                                  │
+│    Сохранение эпизода, результата и контекста│
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 8. Обновление эмоций                         │
+│    Постепенное снижение интенсивности эмоций │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 9. Проверка цели                             │
+│    Оценка прогресса и необходимости          │
+│    скорректировать дальнейшие действия       │
+└──────────────────────┬───────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────┐
+│ 10. Очистка                                  │
+│     Затухание неактуальных данных, эмоций    │
+│     и временных активаций                    │
+└──────────────────────┬───────────────────────┘
+                       ▼
+              Следующий цикл
+```
+
+## Краткая таблица
+
+| № | Этап | Описание |
+|---:|---|---|
+| 1 | Восприятие | Разбирает входной текст, сигнал, команду или событие |
+| 2 | Обновление рабочей памяти | Добавляет новые факты и наблюдения в текущий контекст |
+| 3 | Внимание | Определяет, на чём системе нужно сосредоточиться в первую очередь |
+| 4 | Извлечение из памяти | Находит прошлые знания, опыт и похожие ситуации |
+| 5 | Выбор действия | Применяет правила, условия и приоритеты для выбора реакции |
+| 6 | Выполнение действия | Генерирует ответ, команду, решение или другое действие |
+| 7 | Обучение | Сохраняет результат взаимодействия как новый опыт |
+| 8 | Обновление эмоций | Ослабляет старые эмоциональные состояния, если нет новых причин их поддерживать |
+| 9 | Проверка цели | Сравнивает текущий результат с поставленной целью |
+| 10 | Очистка | Уменьшает важность временных, устаревших и неактуальных данных |
+
+## Упрощённый пример
+
+Пользователь пишет системе:
+
+> «Помоги мне подготовиться к контрольной по физике».
+
+Тогда цикл может выглядеть так:
+
+1. **Восприятие:** система понимает текст запроса.
+2. **Рабочая память:** сохраняет тему — физика, цель — подготовка к контрольной.
+3. **Внимание:** выбирает главную задачу — выяснить тему контрольной и уровень ученика.
+4. **Извлечение:** находит знания о типичных темах школьной физики.
+5. **Выбор действия:** решает задать уточняющий вопрос или сразу предложить план.
+6. **Выполнение:** пишет ответ.
+7. **Обучение:** сохраняет, какие темы вызывают затруднения.
+8. **Эмоции:** снижает уровень тревоги или срочности, если ситуация решена.
+9. **Проверка цели:** оценивает, приблизился ли ученик к подготовке.
+10. **Очистка:** удаляет из активного фокуса ненужные временные детали.
+
+Такой цикл можно использовать как основу для ИИ-агента, чат-бота, игрового NPC, цифрового помощника или модели когнитивного поведения.
