@@ -1,0 +1,1046 @@
+# Лекция: как устроена приватная и защищённая сеть
+
+Эта лекция объясняет идеи из README проекта Dynam / NCP понятным школьникам языком. Проект описывает большую платформу на C++17: она объединяет сетевые инструменты, криптографию, локальные интерфейсы управления и стенды для безопасных экспериментов с сетью. В документе заявлены CLI, веб-панель, Qt-приложение, автоматические тесты и Docker-лаборатория для изучения сетевого трафика. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+Главная цель урока — не научиться «ломать интернет» или вмешиваться в чужие сети, а понять: **как данные ходят по сети, что может быть видно посреднику, как работает шифрование и почему безопасные эксперименты проводят только в изолированной лаборатории.**
+
+***
+
+## Цели урока
+
+После лекции ученик должен уметь:
+
+- Объяснить, зачем нужны IP-адреса, DNS, TCP, UDP, TLS и HTTPS.
+- Отличать содержимое сообщения от метаданных о соединении.
+- Понимать, что делает DPI и почему шифрование не скрывает вообще всё.
+- Знать, для чего нужны цифровые подписи, HMAC, nonce и безопасная случайность.
+- Объяснить смысл Docker-лабораторий, сетевых тестов и анализа пакетов.
+- Критически относиться к заявлениям вроде «полная анонимность» или «невидимый трафик».
+- Понимать, почему нельзя проводить сетевые эксперименты в чужой или школьной сети без разрешения.
+
+***
+
+## Этап 1. Как компьютер находит сайт
+
+Начнём с обычного действия: ученик вводит в браузере адрес сайта:
+
+```text
+https://example.com
+```
+
+Компьютер ещё не знает, где находится этот сайт. Ему нужно выполнить несколько шагов.
+
+```text
+1. Узнать IP-адрес сайта через DNS
+2. Открыть сетевое соединение
+3. Договориться о шифровании TLS
+4. Отправить HTTP-запрос
+5. Получить страницу, изображения и другие данные
+```
+
+Схема выглядит так:
+
+```text
+Браузер
+   ↓
+DNS-сервер
+   ↓
+Интернет-провайдер и маршрутизаторы
+   ↓
+Сервер сайта
+```
+
+### IP-адрес
+
+**IP-адрес** — это числовой адрес устройства в сети. Он похож на почтовый адрес дома: без него сеть не понимает, куда доставить данные.
+
+Пример IPv4-адреса:
+
+```text
+203.0.113.10
+```
+
+Пример IPv6-адреса:
+
+```text
+2001:db8:1234::10
+```
+
+IPv4 привычнее и короче, но адресов в нём мало. IPv6 создавался как более современный формат с огромным количеством возможных адресов.
+
+### Доменное имя
+
+Людям неудобно запоминать наборы чисел. Поэтому мы используем имена:
+
+```text
+wikipedia.org
+school.example
+example.com
+```
+
+Компьютеру всё равно требуется IP-адрес. Перевод имени в IP выполняет **DNS** — Domain Name System, или система доменных имён.
+
+### Аналогия с телефонной книгой
+
+Представь, что домен — это имя человека, а IP-адрес — номер телефона.
+
+```text
+Имя: example.com
+Номер: 203.0.113.10
+```
+
+DNS работает как огромная распределённая телефонная книга интернета.
+
+### Вопрос классу
+
+Почему, по-вашему, сайтам удобнее менять IP-адрес, сохраняя одно и то же доменное имя?
+
+**Ответ:** сайт может переехать на другой сервер или распределить работу между несколькими серверами, но пользователям не придётся запоминать новый адрес.
+
+***
+
+## Этап 2. TCP и UDP: два способа передавать данные
+
+После DNS компьютер обычно устанавливает транспортное соединение. В README проекта часто упоминаются TCP, UDP, QUIC, пакеты, последовательности `seq` и подтверждения `ack`. Чтобы это понять, нужно различать TCP и UDP.
+
+| Свойство | TCP | UDP |
+|---|---|---|
+| Есть ли соединение | Да | Нет в привычном смысле |
+| Гарантируется ли порядок данных | Да | Нет |
+| Повторяется ли потерянная информация | Да | Обычно нет |
+| Что важнее | Надёжность | Скорость и малая задержка |
+| Примеры | HTTPS, сайты, загрузки | Звонки, игры, DNS, QUIC |
+
+### TCP: «доставка с подтверждением»
+
+TCP похож на отправку ценной посылки с уведомлением о вручении.
+
+Перед обменом данными клиент и сервер выполняют «рукопожатие»:
+
+```text
+Клиент → SYN → Сервер
+Клиент ← SYN-ACK ← Сервер
+Клиент → ACK → Сервер
+```
+
+Это называется **TCP three-way handshake**, то есть трёхстороннее рукопожатие.
+
+После этого можно передавать данные.
+
+### Что такое `seq` и `ack`
+
+TCP рассматривает сообщение как длинную последовательность байтов.
+
+- `seq` — номер байта, с которого начинается сегмент.
+- `ack` — подтверждение: «я получил данные до этого места».
+- retransmission — повторная отправка, если пакет потерялся.
+
+Представь книгу, которую передают по страницам:
+
+```text
+Страница 1–100 отправлена
+Получатель: «получил до страницы 100»
+Страница 101–200 отправлена
+```
+
+Если страницы 101–200 потерялись, TCP может отправить их ещё раз.
+
+### UDP: «сообщение без гарантии»
+
+UDP похож на крик через большую площадь:
+
+```text
+«Встречаемся в 16:00!»
+```
+
+Сообщение может дойти быстро, но никто не гарантирует, что его услышали, не перепутали порядок или не потеряли.
+
+Это полезно для голосового чата и игр. Если один кусочек голоса потерялся, лучше пропустить его, чем ждать повторной доставки и слышать звук с большой задержкой.
+
+### QUIC и HTTP/3
+
+**QUIC** — современный транспортный протокол, который обычно работает поверх UDP. HTTP/3 использует QUIC.
+
+Он пытается объединить преимущества:
+
+- скорость старта;
+- защищённое соединение;
+- несколько потоков данных;
+- более удобное восстановление при смене сети, например при переходе с Wi‑Fi на мобильный интернет.
+
+README проверяет работу проекта с TLS, HTTP/1.1, HTTP/2 и частично QUIC/HTTP/3, потому что современные сайты могут работать по-разному. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+***
+
+## Этап 3. HTTPS: почему замочек в браузере важен
+
+Когда сайт использует адрес вида:
+
+```text
+https://example.com
+```
+
+обычно применяется **TLS** — Transport Layer Security.
+
+TLS создаёт защищённый канал между браузером и сервером.
+
+```text
+Браузер ===== зашифрованный канал ===== Сервер
+```
+
+### Что даёт TLS
+
+TLS стремится обеспечить три вещи:
+
+| Свойство | Что это значит |
+|---|---|
+| Конфиденциальность | Посторонний не читает содержание сообщения |
+| Целостность | Данные нельзя незаметно изменить по дороге |
+| Подлинность | Браузер проверяет, что подключился к нужному серверу |
+
+Например, без шифрования злоумышленник в открытой Wi‑Fi-сети мог бы увидеть логин, пароль или содержимое сообщения. С HTTPS он обычно видит гораздо меньше.
+
+### TLS-рукопожатие
+
+Упрощённо оно выглядит так:
+
+```text
+1. Браузер: «Я хочу безопасное соединение»
+2. Сервер: «Вот мой сертификат и параметры»
+3. Браузер проверяет сертификат
+4. Стороны создают общий секрет
+5. Начинается шифрованный обмен данными
+```
+
+В реальности процесс сложнее, но идея именно такая.
+
+### Сертификат
+
+**Сертификат** — это цифровой документ, который связывает домен с криптографическим ключом сервера.
+
+Например, браузер хочет открыть:
+
+```text
+https://school.example
+```
+
+Он проверяет:
+
+- подходит ли сертификат к имени `school.example`;
+- не истёк ли срок действия;
+- доверяет ли он центру сертификации;
+- не был ли сертификат отозван.
+
+Если проверка не проходит, браузер показывает предупреждение.
+
+### Важный вывод
+
+HTTPS защищает **содержимое** соединения. Но часть информации о соединении всё равно может быть заметна.
+
+Например, могут быть видны:
+
+- IP-адрес сервера;
+- время начала соединения;
+- объём переданных данных;
+- длительность соединения;
+- иногда имя сайта в служебных данных TLS.
+
+Эти данные называют **метаданными**.
+
+***
+
+## Этап 4. SNI, ECH и метаданные
+
+### Что такое SNI
+
+Когда один IP-адрес обслуживает много сайтов, серверу надо понять, сертификат какого сайта показать браузеру.
+
+Для этого исторически используется **SNI** — Server Name Indication. Это поле в начале TLS-соединения, которое может содержать имя сайта.
+
+Упрощённый пример:
+
+```text
+Клиент подключается к IP: 203.0.113.10
+Клиент сообщает SNI: example.com
+Сервер понимает, какой сертификат использовать
+```
+
+### Почему это важно
+
+Даже если содержимое HTTPS зашифровано, сетевое оборудование может попытаться анализировать служебные сведения:
+
+```text
+Кто с кем соединяется?
+Когда?
+Как долго?
+Какой объём данных передан?
+Какой домен указан в начале соединения?
+```
+
+Это не означает, что любой наблюдатель видит всё. Но это показывает важную идею: **шифрование содержимого — не то же самое, что полное сокрытие всех метаданных.**
+
+### ECH
+
+**ECH — Encrypted ClientHello** — технология, которая защищает чувствительные части начального сообщения TLS, включая имя сайта в типичных сценариях.
+
+README проекта упоминает ECH и HPKE как современные криптографические компоненты, а также исправление ошибки, связанной с «info-строкой» ECH. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Простая аналогия
+
+- Обычный HTTPS: письмо запечатано, но адрес на конверте может быть виден.
+- ECH: часть адресной информации тоже стараются защитить.
+- Полная анонимность: гораздо более сложная задача, потому что остаются время, маршруты, размеры сообщений и другие следы.
+
+***
+
+## Этап 5. Что такое DPI
+
+**DPI** расшифровывается как Deep Packet Inspection — глубокая инспекция пакетов.
+
+Обычный маршрутизатор в основном думает так:
+
+```text
+«Пакет для IP 203.0.113.10 — отправляю дальше».
+```
+
+DPI пытается понять больше:
+
+```text
+«Это похоже на TLS»
+«Здесь указан домен»
+«Это HTTP-запрос»
+«Трафик похож на видеозвонок»
+«Этот поток имеет известный шаблон»
+```
+
+### Пакет и поток — не одно и то же
+
+Один пакет — это маленький фрагмент данных. Но настоящее сообщение может быть разбито на много пакетов.
+
+```text
+Пакет 1: начало сообщения
+Пакет 2: продолжение
+Пакет 3: конец
+```
+
+Если устройство смотрит только на один пакет, оно может не увидеть всю картину.
+
+Если оно умеет собирать данные обратно, это называется **TCP-реассемблирование**:
+
+```text
+Фрагменты TCP → сборка в единый поток байтов → анализ
+```
+
+README описывает эмулятор DPI с TCP-реассемблированием в userspace через NFQUEUE и разными политиками обработки сегментов, пришедших не в ожидаемом порядке. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Почему это важно для школьника
+
+Это пример общей инженерной идеи:
+
+> Нельзя делать вывод о системе по одному маленькому кусочку данных.
+
+Если нужно понять веб-страницу, недостаточно увидеть одну букву. Если нужно понять сетевое соединение, недостаточно увидеть один пакет.
+
+### Что проект проверяет в лаборатории
+
+В README перечислены тесты, которые изучают:
+
+- корректность формирования TCP-сегментов;
+- устойчивость к задержкам и потерям;
+- работу с TLS 1.2 и TLS 1.3;
+- совместимость с HTTP/1.1 и HTTP/2;
+- влияние MTU;
+- переупорядочивание пакетов;
+- работу IPv4 и IPv6. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+Это показывает, что реальные сети сложнее идеальной схемы из учебника.
+
+***
+
+## Этап 6. DNS и DoH
+
+Мы уже знаем: DNS переводит имя сайта в IP-адрес.
+
+### Обычный DNS
+
+В традиционной схеме запрос может выглядеть так:
+
+```text
+Компьютер → DNS-сервер:
+«Какой IP у example.com?»
+```
+
+В некоторых сетях такой запрос легче наблюдать или изменять, чем HTTPS-трафик.
+
+### DoH
+
+**DoH — DNS over HTTPS**. Это DNS-запрос внутри защищённого HTTPS-соединения.
+
+```text
+Компьютер
+   ↓ HTTPS
+DoH-сервер
+   ↓
+Ответ с IP-адресом
+```
+
+Польза DoH:
+
+- локальному наблюдателю сложнее увидеть содержание DNS-запроса;
+- DNS-запрос получает защиту TLS;
+- можно использовать выбранный резолвер вместо автоматического DNS от сети.
+
+Но DoH не является «магической кнопкой анонимности»:
+
+- DoH-провайдер всё равно получает запрос;
+- сайт видит подключение;
+- сетевой путь и IP-адрес сайта могут быть видны;
+- если сама сеть полностью блокирует доступ, один DoH может не помочь.
+
+В README говорится, что проект использует несколько DoH-эндпоинтов с короткими тайм-аутами и проверяет их доступность, чтобы не оставить пользователя без работающего интернета из-за одной неудачной настройки. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+***
+
+## Этап 7. Криптография без магии
+
+Криптография — не «секретный код из фильма». Это набор математических инструментов для конкретных задач.
+
+| Задача | Подход |
+|---|---|
+| Спрятать содержание сообщения | Шифрование |
+| Убедиться, что данные не изменили | MAC или подпись |
+| Проверить автора сообщения | Цифровая подпись |
+| Защититься от повторной отправки старого пакета | Nonce и время |
+| Получить непредсказуемые ключи | CSPRNG |
+
+### Симметричное шифрование
+
+Один секретный ключ используется и для шифрования, и для расшифрования.
+
+```text
+Сообщение + секретный ключ → шифротекст
+Шифротекст + тот же ключ → исходное сообщение
+```
+
+Проблема: как безопасно передать ключ второй стороне?
+
+### Криптография с открытым ключом
+
+Здесь есть два ключа:
+
+```text
+Публичный ключ — можно показывать всем
+Приватный ключ — хранится только у владельца
+```
+
+Это позволяет решать разные задачи, включая цифровые подписи.
+
+### Ed25519
+
+**Ed25519** — современная схема цифровой подписи.
+
+```text
+Приватный ключ владельца
+   ↓ создаёт подпись
+Сообщение + подпись
+   ↓ проверка публичным ключом
+«Да, сообщение подписал владелец ключа»
+```
+
+README использует Ed25519 для лицензий, подписанных обновлений и системы Single Packet Authorization. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### HMAC
+
+**HMAC** — способ проверить подлинность данных, если две стороны уже знают общий секрет.
+
+```text
+Сообщение + общий секрет → HMAC
+```
+
+Получатель вычисляет HMAC сам и сравнивает результат.
+
+Если кто-то изменил сообщение, HMAC не совпадёт.
+
+### Nonce
+
+**Nonce** — одноразовое значение. Его задача — не дать повторно использовать старый корректный запрос.
+
+Представь электронный пропуск:
+
+```text
+«Разрешить вход Ивану, номер запроса 74128, время 10:35»
+```
+
+Если злоумышленник перехватит и повторит его через час, система должна заметить, что номер 74128 уже использовался или время слишком старое.
+
+### Почему нужен хороший генератор случайных чисел
+
+Для ключей, nonce и токенов нельзя использовать слабую случайность.
+
+Плохой пример:
+
+```text
+Пароль: 123456
+Случайное число: всегда почти одинаковое
+```
+
+Хороший вариант использует **CSPRNG** — криптографически стойкий генератор псевдослучайных чисел. README включает CSPRNG среди базовых компонентов проекта. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+***
+
+## Этап 8. Подписи, доступ и SPA
+
+В README описана технология **SPA — Single Packet Authorization**, или «авторизация одним пакетом».
+
+Это можно объяснить через закрытую дверь.
+
+### Обычная защита
+
+Сервер может открыть порт для всех:
+
+```text
+Интернет → порт 443 → сервер
+```
+
+Тогда его могут видеть сканеры, боты и злоумышленники.
+
+### SPA-подход
+
+Вместо этого сервис может быть закрыт:
+
+```text
+Интернет → порт закрыт
+```
+
+А доверенный клиент сначала отправляет подтверждение, подписанное своим приватным ключом:
+
+```text
+Клиент
+   ↓ подписанный запрос
+Сервер проверяет подпись
+   ↓
+Временно разрешает доступ только этому клиенту
+```
+
+README описывает проверку Ed25519-подписи, времени и nonce, а затем временное разрешение доступа для конкретного IP-адреса через `ipset`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Зачем это может быть полезно
+
+Например, администратор хочет защитить служебный сервер:
+
+- сначала пройти криптографическую проверку;
+- получить доступ на несколько минут;
+- после этого доступ автоматически закрывается.
+
+### Важное правило
+
+Безопасность не равна «спрятать порт». Настоящая защита требует:
+
+- обновлять систему;
+- использовать сильную аутентификацию;
+- ограничивать доступ;
+- вести журналы событий;
+- иметь резервные способы восстановления;
+- тестировать конфигурацию.
+
+***
+
+## Этап 9. Надёжность сети: потери, задержки и FEC
+
+Интернет не идеален.
+
+Пакеты могут:
+
+- теряться;
+- приходить с задержкой;
+- приходить в другом порядке;
+- дублироваться;
+- не помещаться в ограничение MTU.
+
+### Задержка
+
+**Задержка**, или latency, — время, которое требуется данным, чтобы добраться от одного компьютера к другому.
+
+Например:
+
+```text
+10 мс — обычно очень быстро
+100 мс — заметно в играх и звонках
+300 мс — уже неудобно для интерактивной связи
+```
+
+### Потери
+
+Если из 100 пакетов не дошли 5, это 5% потерь.
+
+Для загрузки файла TCP может запросить повторную передачу. Для видеозвонка повтор часто будет слишком поздним.
+
+### MTU
+
+**MTU — Maximum Transmission Unit** — максимальный размер сетевого пакета, который проходит через участок сети без дополнительного дробления.
+
+Если данные слишком велики, они могут быть разделены на части. Неправильная настройка MTU может вызывать странные проблемы:
+
+- сайт долго загружается;
+- часть сервисов работает, а часть нет;
+- VPN или мобильная сеть ведут себя нестабильно.
+
+### FEC: восстановление без повторного запроса
+
+**FEC — Forward Error Correction** добавляет избыточность к данным.
+
+Пример:
+
+```text
+Исходные части: A, B, C, D
+Дополнительные части: P1, P2
+Отправляется: A, B, C, D, P1, P2
+```
+
+Если часть данных потерялась, получатель может восстановить её с помощью дополнительных частей.
+
+README описывает реализацию кодирования Reed–Solomon: из \(N\) блоков можно восстановить исходную информацию, если хватает нужного количества частей \(K\). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Аналогия
+
+Учитель отправил классу 4 важные страницы и 2 запасные, из которых можно восстановить потерянную информацию. Даже если часть листов не дошла, класс всё равно сможет собрать материал.
+
+### Цена надёжности
+
+За дополнительную устойчивость приходится платить:
+
+- больше передаваемых данных;
+- больше нагрузки на процессор;
+- возможное увеличение задержки.
+
+Поэтому инженер всегда ищет баланс.
+
+***
+
+## Этап 10. Анализ трафика и его «отпечатки»
+
+Даже при шифровании разные программы могут вести себя по-разному.
+
+Например, браузер, игра и видеозвонок отправляют пакеты с разными:
+
+- размерами;
+- интервалами;
+- частотой;
+- протоколами;
+- вариантами TLS-настроек.
+
+### TLS-отпечатки
+
+**JA3** и **JA4** — способы описывать особенности TLS-клиента.
+
+Они могут учитывать:
+
+- поддерживаемые версии TLS;
+- наборы шифров;
+- расширения;
+- порядок параметров;
+- другие признаки начального TLS-сообщения.
+
+README упоминает JA3/JA4 и профили браузеров. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Почему это нужно знать
+
+Если разработчик делает собственный сетевой клиент, он должен понимать:
+
+- необычная реализация может вести себя нестандартно;
+- «шифруется» не означает «неотличимо от обычного браузера»;
+- поведение системы определяется не только одним пакетом.
+
+### Мимикрия трафика
+
+README описывает статистические профили трафика, похожие на видеозвонок, стриминг или VoIP. Они используют размеры пакетов и интервалы между отправками. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+Это можно представить как попытку повторить ритм:
+
+```text
+Видеозвонок: много небольших регулярных пакетов
+Загрузка файла: крупные серии данных
+Музыка: более ровный поток
+```
+
+Но важно не верить в слишком громкие обещания. Настоящий сетевой трафик сложен: он зависит от устройства, браузера, сервера, качества связи и поведения пользователя.
+
+***
+
+## Этап 11. Как безопасно исследовать сеть
+
+Самый правильный способ учиться сетям — не трогать чужие сети, а создавать свою лабораторию.
+
+README описывает Docker-стенды, где есть:
+
+```text
+client → dpi-router → target
+```
+
+То есть:
+
+- `client` — клиент, который отправляет запрос;
+- `dpi-router` — учебный промежуточный узел;
+- `target` — тестовый сервер.
+
+Такая лаборатория изолирована: эксперименты не должны менять сеть компьютера-хоста. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Docker
+
+**Docker** позволяет запускать приложения в контейнерах — изолированных окружениях.
+
+Можно думать о контейнере как о маленьком отдельном компьютере внутри твоего компьютера, хотя технически это упрощение.
+
+Преимущества:
+
+- легко повторять эксперименты;
+- можно удалить лабораторию и начать сначала;
+- меньше риска повредить основную систему;
+- удобно делиться конфигурацией с одноклассниками.
+
+### Wireshark и pcap
+
+**Wireshark** — программа для просмотра сетевых пакетов.
+
+**pcap** — формат захвата трафика.
+
+С помощью pcap можно увидеть:
+
+```text
+TCP handshake
+TLS ClientHello
+DNS-запрос
+Повторную отправку TCP-сегмента
+Закрытие соединения
+```
+
+README упоминает автоматические проверки pcap: анализ последовательностей TCP, повторных передач, согласования TLS и HTTP/2. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### tc-netem
+
+`tc-netem` — средство Linux для искусственного ухудшения сети.
+
+Оно может создать условия:
+
+```text
+Задержка: 100 мс
+Потери: 1%
+Переупорядочивание пакетов
+Маленький MTU
+```
+
+Это полезно для проверки: будет ли приложение работать у пользователя с плохим Wi‑Fi или мобильным интернетом?
+
+***
+
+## Этап 12. eBPF и XDP: программы рядом с сетью
+
+В Linux есть технологии **eBPF** и **XDP**.
+
+### eBPF
+
+eBPF позволяет запускать ограниченные программы внутри ядра Linux.
+
+Они могут:
+
+- считать сетевые пакеты;
+- собирать статистику;
+- помогать с диагностикой;
+- применять правила фильтрации;
+- находить аномалии.
+
+### XDP
+
+XDP — очень ранняя точка обработки входящего пакета:
+
+```text
+Сетевая карта
+   ↓
+XDP
+   ↓
+Обычная обработка Linux
+   ↓
+Приложения
+```
+
+Чем раньше обработан пакет, тем меньше ресурсов тратится.
+
+README описывает XDP-модуль для подсчёта UDP-трафика и выборочного отбрасывания пакетов на заданном порту. Для этого требуются административные права и ядро с поддержкой BPF. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Где это применяется законно
+
+- защита серверов от перегрузки;
+- мониторинг сети;
+- измерение нагрузки;
+- фильтрация нежелательного трафика в своей инфраструктуре;
+- исследовательские стенды.
+
+### Почему нужно быть осторожным
+
+Ошибочная фильтрация может:
+
+- заблокировать нужный сервис;
+- отключить сеть;
+- отрезать удалённый доступ к серверу;
+- вызвать сложные для диагностики проблемы.
+
+Поэтому сначала — виртуальная машина, контейнер или отдельный тестовый сервер.
+
+***
+
+## Этап 13. Как устроен большой проект
+
+README описывает трёхслойную архитектуру:
+
+```text
+┌──────────────────────────────────────────┐
+│ Интерфейсы                                │
+│ CLI, веб-панель Flask, Qt-приложение      │
+└───────────────────┬──────────────────────┘
+                    │
+┌───────────────────▼──────────────────────┐
+│ Управление                                │
+│ Конфигурация, логи, статистика, лицензии, │
+│ запуск и остановка модулей                │
+└───────────────────┬──────────────────────┘
+                    │
+┌───────────────────▼──────────────────────┐
+│ Базовые компоненты                        │
+│ Криптография, сеть, DNS, TLS, БД, тесты   │
+└──────────────────────────────────────────┘
+```
+
+### Core Library
+
+Это «двигатель» программы — общий код, который реализует основную логику.
+
+### CLI
+
+CLI — Command Line Interface, управление командами в терминале.
+
+Плюсы:
+
+- удобно автоматизировать;
+- легко запускать на сервере;
+- просто записывать команды в скрипт;
+- легче отлаживать.
+
+### Web GUI
+
+Веб-интерфейс — локальная панель в браузере.
+
+README описывает панель на Flask с логами, статистикой, переключателями модулей, запуском и остановкой процесса. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Qt GUI
+
+Qt — популярный фреймворк для настольных приложений на C++.
+
+README также заявляет Qt6-приложение с графиками, лицензией и значком в системном трее. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Оркестратор
+
+**Orchestrator**, или оркестратор, — компонент, который координирует работу других частей программы.
+
+Его задача не «делать всё самому», а управлять:
+
+- в каком порядке включать компоненты;
+- какие настройки передавать;
+- какие ошибки обрабатывать;
+- какие метрики собирать;
+- как корректно остановить систему.
+
+Это как дирижёр в оркестре: он не играет на всех инструментах, но следит, чтобы они работали согласованно.
+
+***
+
+## Этап 14. Тестирование: почему «работает у меня» недостаточно
+
+README сообщает о сотнях автоматических тестов, включая unit-тесты и интеграционные сценарии в Docker. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+### Unit-тесты
+
+**Unit-тест** проверяет маленькую часть программы.
+
+Например:
+
+```text
+Функция создаёт подпись
+↓
+Тест проверяет, что подпись проходит проверку
+↓
+Тест меняет один байт сообщения
+↓
+Проверка должна не пройти
+```
+
+### Интеграционные тесты
+
+**Интеграционный тест** проверяет, как части работают вместе.
+
+Например:
+
+```text
+Клиент → тестовая сеть → сервер
+```
+
+Проверяется не одна функция, а весь путь данных.
+
+### Тесты производительности
+
+Они измеряют:
+
+- скорость;
+- задержку;
+- нагрузку на CPU;
+- число повторных передач;
+- устойчивость при плохой сети.
+
+### Но тесты не доказывают всё
+
+Нужно помнить:
+
+```text
+Много тестов ≠ абсолютная безопасность
+Тест в Docker ≠ работа в любой реальной сети
+Работа против простой модели ≠ устойчивость против сложной системы
+```
+
+README сам указывает важный пример: некоторые позиционные способы деления данных показали нулевой успех против модели, которая корректно выполняет TCP-реассемблирование. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+Это хороший урок инженерной честности: отрицательный результат тоже ценен.
+
+***
+
+## Этап 15. Критическое мышление в кибербезопасности
+
+В технических документах часто встречаются громкие слова:
+
+- «полностью готово»;
+- «неотличимо от обычного трафика»;
+- «защита от анализа»;
+- «параноидальный режим»;
+- «обходит любые ограничения».
+
+Школьник, студент и разработчик должны задавать вопросы.
+
+### Вопросы к любому заявлению
+
+1. От какой именно угрозы защищает система?
+2. Кто предполагаемый противник?
+3. Какие данные он может видеть?
+4. Есть ли независимый аудит?
+5. Какая версия программы тестировалась?
+6. В какой лаборатории проводились эксперименты?
+7. Какие ограничения прямо признаны авторами?
+8. Что может сломаться при включении функции?
+9. Как восстановить сеть после ошибки?
+10. Не нарушает ли эксперимент чужие правила или закон?
+
+### Пример критической оценки
+
+Фраза:
+
+```text
+«Система делает пользователя полностью анонимным».
+```
+
+Правильная реакция:
+
+```text
+«Что именно скрывается?
+IP-адрес?
+Содержимое?
+DNS-запросы?
+Время соединения?
+Размеры пакетов?
+Действия на самом устройстве?
+От кого именно?»
+```
+
+Без ответов на эти вопросы фраза не является доказательством.
+
+***
+
+## Этап 16. Правила цифровой безопасности
+
+Во время сетевых экспериментов соблюдай правила.
+
+- Работай только со своим компьютером, своей виртуальной машиной, своим сервером или системой, на которую у тебя есть явное разрешение.
+- Не сканируй чужие адреса и не отправляй специально сформированные пакеты в школьную, рабочую или публичную сеть.
+- Не отключай защиту компьютера ради эксперимента.
+- Не запускай инструменты, меняющие firewall, маршрутизацию или системный прокси, на главном компьютере без понимания отката.
+- Не храни приватные ключи в репозитории, облаке, скриншотах или переписках.
+- Не запускай непроверенные бинарные файлы с правами администратора.
+- Делай резервные копии важных конфигураций.
+- Тестируй рискованные сетевые функции сначала в VM или Docker.
+
+README отдельно предупреждает о режиме kill switch: он способен заблокировать весь не-loopback трафик, а после аварийного завершения процесса машина может остаться без сети, включая удалённое SSH-подключение. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/159549825/c7c0ef50-61ac-42ff-ab19-3b2bbf96da9a/README.ru.md?AWSAccessKeyId=ASIA2F3EMEYEXF3WVI5T&Signature=ZWKVSZIJ560hZZpxEzAntGU7TPY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJIMEYCIQC54oQJ7Lp36QGe15JkDOSYEIV82XO5n55BPXd3MXs%2BTgIhAIoyZGngq8q3UwqpgN6gQKyrpPC1ZJlpAHVhuqitgV4mKvMECFgQARoMNjk5NzUzMzA5NzA1Igyi6y683UYPZ9V%2F3U4q0ARHhWf3%2By%2BFMMAWnxol8acfuBCiD7UtDqfSU6N8kwY5ElJxKlXG%2BxWBZQOzUuOC36%2FFQHqWyvgNaysheUvOBDN0elmvIK3dmAQw8BPLvEpYUarD8v%2F0ZxD1IwQWzqi%2FwVI3b%2BVA7aVL73gtj%2F8c%2FNknWBCvseybfvZqmHPaRI0eu%2FIERICJ6U5BfxTh1nF6YbLPOxPkbwtvSUst2d2dLrmMyFeFg6Em1PAbXJhtKfjNQOmIVz3iW38Y%2FJZaucZQgFGQy18hsCLfLDMZiYrkKg5Z2NH%2BHxUH5Lzp%2F54WyePocUHIZXLKyqlQp3%2FOq31Eq88k4fXyYnIzpYbrRamFPK9XS%2FurqeXgc%2FZx2ktbjJj4Fmrvg9hjOcS3id75LtFmcE%2BzNKHdtkkquNYZQMhzAxc4IWZNxpQsLOk5uh4C9xvmZviHn1xot05nW1kBnIcxLu51%2BK4GSYYWC8YCxEFK7tt31Nj0htx5IZwoNbe50r8dmSMs5izbF8hPYBgYhlYAUxWZTLCbwohE%2F3DzyNrRd4KKuZJABG%2BJKW1i9E8KDoUlmCUUNgx%2FJmf0Lm5xjpnLSt4AMxAFLIzQUDofojIuWXUM4N7cAo1azKcSN%2FfIfYyhDxssRdWpIC6EYM%2B8INP07jiRPO2ZQhibLqGYJDyOR7sia%2FTg9lhbhF83hZkNKhOaKbZbRtQTp1A9N2I8LcTk2UJimfMekINmbBzt97MpztZI9vfu%2B0JT2oSzD0X7zB2WwEk2kXilit8iGBv1UlCKQ48ERqJw81aTVPzvY62GhtrnMLmbyNQGOpcBSo6o%2FFr1uDP6NB6xJ89K2yjTCbyHazCvBRsgkSd%2BMBDz3rxn58Y%2F4e6kj9QzMtxrHR3%2BJClNdVzKG%2F2m%2BN%2Fgdg2pQAS6TqVsMvQBy9UOjlpJPk2ZXZ8ZRH6nrH5izwQdgXeVRXxaGS9iKTmt5v%2Bykr4BLXbvw%2Bm4VG5YgwH7HcrHd0wGbo8F3rv3ya5XptrbFBgPezLDCQ%3D%3D&Expires=1787960204)
+
+***
+
+## Итоги лекции
+
+Мы прошли путь обычного интернет-запроса:
+
+```text
+Доменное имя
+   ↓ DNS
+IP-адрес
+   ↓ TCP или UDP
+Сетевое соединение
+   ↓ TLS
+Шифрованный канал
+   ↓ HTTP
+Сайт или API
+```
+
+Теперь ты должен понимать следующие главные идеи:
+
+- **DNS** переводит доменное имя в IP-адрес.
+- **TCP** обеспечивает надёжную передачу данных, а **UDP** подходит для быстрых сообщений без строгой гарантии доставки.
+- **TLS/HTTPS** шифрует содержимое, но не всегда скрывает все метаданные.
+- **SNI** может сообщать имя сайта на раннем этапе TLS, а **ECH** помогает защищать эту информацию.
+- **DPI** анализирует сетевой трафик глубже, чем обычный маршрутизатор.
+- **Ed25519**, **HMAC**, **nonce** и **CSPRNG** — важные строительные блоки безопасной разработки.
+- **FEC/Reed–Solomon** помогает восстанавливать данные при потерях, но требует дополнительных ресурсов.
+- **Docker**, **pcap**, **Wireshark** и **tc-netem** позволяют изучать сеть безопасно и воспроизводимо.
+- Большое число функций и тестов полезно, но не доказывает абсолютную безопасность или анонимность.
+- Ответственный разработчик всегда тестирует только в собственной изолированной среде.
+
+***
+
+## Вопросы для проверки
+
+1. Зачем нужен DNS, если у серверов уже есть IP-адреса?
+2. В чём главное различие TCP и UDP?
+3. Что делает TLS?
+4. Почему HTTPS не означает, что наблюдатель ничего не может узнать о соединении?
+5. Что такое SNI?
+6. Для чего нужен ECH?
+7. Что означает DPI?
+8. Почему TCP-реассемблирование важно при анализе сетевого трафика?
+9. Для чего нужен nonce?
+10. Чем цифровая подпись отличается от обычного шифрования?
+11. Почему нельзя считать большое число тестов гарантией абсолютной безопасности?
+12. Почему лаборатория Docker безопаснее эксперимента в основной сети?
+13. Что такое FEC и в каких условиях оно полезно?
+14. Почему приватный ключ нельзя никому отправлять?
+15. Какое правило безопасности при сетевых экспериментах самое важное?
+
+***
+
+## Практическое задание
+
+Выполни это только на своём компьютере и без изменения сетевых настроек:
+
+1. Открой любой HTTPS-сайт в браузере.
+2. Нажми на значок замка рядом с адресом.
+3. Найди информацию о сертификате.
+4. Ответь письменно:
+   - Какой домен указан в сертификате?
+   - Кто выпустил сертификат?
+   - Когда он истекает?
+   - Используется ли HTTPS?
+5. Объясни в 5–7 предложениях путь запроса от введённого домена до загрузки страницы.
+
+Следующий безопасный шаг для изучения — освоить Wireshark на собственном трафике: найти DNS-запрос, TCP-рукопожатие и TLS ClientHello, не изменяя и не отправляя никаких специальных пакетов.
