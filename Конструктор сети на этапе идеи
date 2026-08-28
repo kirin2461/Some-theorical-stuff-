@@ -1,0 +1,238 @@
+# InfraMap - Платформа оценки цифровой инфраструктуры России
+
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Python Version](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)]()
+
+## Описание
+
+InfraMap - это комплексная веб-платформа для оценки цифровой инфраструктуры и связи по всей России. Платформа предоставляет:
+
+- 🗺️ **Публичную карту покрытия** - качество мобильной связи (2G/3G/4G/5G) по операторам
+- 📡 **Информацию о фиксированном интернете** - оптика, xDSL, радиоканал
+- 💰 **Умный подбор тарифов** - с учётом реального покрытия и профиля использования
+- 📶 **WiFi Planner** - планирование покрытия WiFi в помещениях
+- 🔌 **Оптическое планирование** - для инженеров с расчётом link budget
+
+## Архитектура
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        КЛИЕНТСКИЙ СЛОЙ                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │   Web App   │  │  Mobile App │  │    Engineer Portal      │  │
+│  │   (React)   │  │    (PWA)    │  │      (Vue/React)        │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      API GATEWAY (Nginx)                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+        ▼                     ▼                     ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Coverage   │    │   Tariff     │    │    Fiber     │
+│   Service    │    │   Service    │    │   Service    │
+│    (Go)      │    │  (Python)    │    │    (Go)      │
+└──────────────┘    └──────────────┘    └──────────────┘
+        │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         СЛОЙ ДАННЫХ                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │ PostgreSQL  │  │    Redis    │  │      ClickHouse         │  │
+│  │  + PostGIS  │  │   (Cache)   │  │     (Analytics)         │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Технологический стек
+
+### Backend
+- **Coverage Service** - Go + Fiber + PostGIS
+- **Tariff Service** - Python + FastAPI + SQLAlchemy
+- **Fiber Service** - Go + Fiber (link budget calculator)
+- **WiFi Service** - Python + FastAPI (heatmap calculator)
+- **Auth Service** - Go + JWT
+
+### Frontend
+- React 18 + TypeScript
+- MapLibre GL JS (self-hosted maps)
+- Tailwind CSS + shadcn/ui
+
+### Infrastructure
+- PostgreSQL 15 + PostGIS
+- Redis (кэш, сессии)
+- TileServer GL (векторные тайлы)
+- Docker + Docker Compose
+- Prometheus + Grafana (мониторинг)
+
+## Быстрый старт
+
+### Требования
+- Docker 20.10+
+- Docker Compose 2.0+
+- Go 1.21+ (для разработки)
+- Python 3.11+ (для разработки)
+
+### Запуск локально
+
+```bash
+# Клонирование репозитория
+git clone https://github.com/inframap/platform.git
+cd infra-map-platform
+
+# Запуск всех сервисов
+docker-compose up -d
+
+# Проверка статуса
+docker-compose ps
+
+# Логи
+docker-compose logs -f coverage-service
+```
+
+### Доступные сервисы
+
+| Сервис | URL | Описание |
+|--------|-----|----------|
+| Web App | http://localhost | Основной интерфейс |
+| Coverage API | http://localhost:8081 | API покрытия |
+| Tariff API | http://localhost:8082 | API тарифов |
+| Fiber API | http://localhost:8083 | API оптики |
+| WiFi API | http://localhost:8084 | API WiFi планирования |
+| Auth API | http://localhost:8085 | API аутентификации |
+| Grafana | http://localhost:3001 | Мониторинг |
+| Prometheus | http://localhost:9090 | Метрики |
+
+## API Endpoints
+
+### Coverage API
+```
+GET  /api/v1/coverage/point?lat={lat}&lon={lon}
+GET  /api/v1/coverage/building/{building_id}
+GET  /api/v1/coverage/tiles?bbox={bbox}
+GET  /api/v1/coverage/operators
+GET  /api/v1/coverage/speed-stats
+```
+
+### Tariff API
+```
+GET  /api/v1/tariffs
+GET  /api/v1/tariffs/{tariff_id}
+POST /api/v1/tariffs/recommendations
+GET  /api/v1/tariffs/by-location
+POST /api/v1/tariffs/compare
+```
+
+### Fiber API
+```
+GET  /api/v1/fiber/availability?building_id={id}
+POST /api/v1/fiber/plan              # для инженеров
+GET  /api/v1/fiber/nodes
+```
+
+### WiFi API
+```
+GET  /api/v1/projects
+POST /api/v1/projects
+POST /api/v1/projects/{id}/heatmap
+POST /api/v1/projects/{id}/ap-recommendations
+```
+
+## Структура проекта
+
+```
+infra-map-platform/
+├── services/              # Микросервисы
+│   ├── coverage-service/  # Go - покрытие
+│   ├── tariff-service/    # Python - тарифы
+│   ├── fiber-service/     # Go - оптика
+│   ├── wifi-service/      # Python - WiFi
+│   └── auth-service/      # Go - аутентификация
+├── web/                   # React frontend
+├── database/              # SQL миграции
+├── shared/                # OpenAPI спецификации
+├── infrastructure/        # Docker, K8s, Terraform
+└── docs/                  # Документация
+```
+
+## Разработка
+
+### Coverage Service (Go)
+
+```bash
+cd services/coverage-service
+
+# Установка зависимостей
+go mod download
+
+# Запуск
+go run cmd/server/main.go
+
+# Тесты
+go test ./...
+```
+
+### Tariff Service (Python)
+
+```bash
+cd services/tariff-service
+
+# Установка зависимостей
+pip install -e ".[dev]"
+
+# Запуск
+uvicorn app.main:app --reload
+
+# Тесты
+pytest
+```
+
+## План развития
+
+| Phase | Срок | Описание |
+|-------|------|----------|
+| 1 | Месяцы 1-3 | MVP - публичная карта покрытия |
+| 2 | Месяцы 4-5 | Тарифы и рекомендации |
+| 3 | Месяцы 6-7 | Оптическая инфраструктура |
+| 4 | Месяцы 8-10 | WiFi Planner |
+| 5 | Месяцы 11+ | ML/AI интеграция |
+
+Подробный план: [ROADMAP.md](./ROADMAP.md)
+
+## ML/AI Roadmap
+
+### Phase 5.1: Улучшенный path-loss (Месяцы 11-12)
+- ML-модель для предсказания затухания сигнала
+- Точность ±3 dBm
+
+### Phase 5.2: Предсказание покрытия (Месяцы 13-14)
+- ML для предсказания зон покрытия
+- Планирование новых вышек
+
+### Phase 5.3: Умные тарифные рекомендации (Месяцы 15-16)
+- Collaborative filtering
+- Learning to Rank
+
+### Phase 5.4: Оптимизация размещения AP (Месяцы 17-18)
+- Genetic Algorithm / RL
+- На 20% меньше AP при том же покрытии
+
+## Безопасность
+
+- Все данные хранятся в РФ
+- Шифрование at rest и in transit
+- JWT аутентификация
+- Rate limiting
+- WAF защита
+
+## Лицензия
+
+Проприетарное ПО. Все права защищены.
+
